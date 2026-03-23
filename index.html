@@ -147,15 +147,25 @@
   <button id="mode-btn" onclick="toggleMode()">🌙 Nuit</button>
 
   <div id="tide-panel">
-    <div id="tide-label">Marée</div>
-    <div id="tide-gauge-wrap"><div id="tide-fill" style="height:50%"></div></div>
-    <div id="tide-arrow" class="up">▲</div>
-    <div id="tide-pct">—</div>
-    <div class="tide-row">
-      <span id="t-haute-val" class="t-haute">—</span>
-      <span id="t-basse-val" class="t-basse">—</span>
+    <!-- Vue SHOM iframe (priorité) -->
+    <div id="tide-shom-wrap">
+      <iframe id="tide-shom-frame"
+        src="https://maree.shom.fr/harbor/CALAIS"
+        scrolling="no" frameborder="0">
+      </iframe>
     </div>
-    <div id="tide-next">—</div>
+    <!-- Jauge locale (fallback) -->
+    <div id="tide-local" style="display:none; flex-direction:column; align-items:center; gap:6px; width:100%;">
+      <div id="tide-label">MARÉE ○</div>
+      <div id="tide-gauge-wrap"><div id="tide-fill" style="height:50%"></div></div>
+      <div id="tide-arrow" class="up">▲</div>
+      <div id="tide-pct">—</div>
+      <div class="tide-row">
+        <span id="t-haute-val" class="t-haute">—</span>
+        <span id="t-basse-val" class="t-basse">—</span>
+      </div>
+      <div id="tide-next">—</div>
+    </div>
   </div>
 
   <script>
@@ -453,9 +463,20 @@
         if (!success) throw new Error('scraping échoué');
       } catch(e1) {
         // Fallback local
+        showLocalGauge();
         computeTide();
         document.getElementById('tide-label').textContent = 'MARÉE ○';
       }
+    }
+
+    // Afficher l'iframe SHOM ou la jauge locale
+    function showShomIframe() {
+      document.getElementById('tide-shom-wrap').style.display = 'block';
+      document.getElementById('tide-local').style.display = 'none';
+    }
+    function showLocalGauge() {
+      document.getElementById('tide-shom-wrap').style.display = 'none';
+      document.getElementById('tide-local').style.display = 'flex';
     }
 
     // Parser le HTML de maree.shom.fr pour extraire les extrêmes
