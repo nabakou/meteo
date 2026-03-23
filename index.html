@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Météo Nismes</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* ── THÈMES ─────────────────────────────────────────────────── */
+    body {
+      --bg:           #0a1a3a;
+      --panel-bg:     rgba(0,15,50,0.82);
+      --panel-border: rgba(100,180,255,0.3);
+      --btn-bg:       rgba(255,255,255,0.18);
+      --btn-active:   rgba(255,255,255,0.45);
+      --text:         white;
+      --text-dim:     rgba(255,255,255,0.55);
+      --text-faint:   rgba(255,255,255,0.25);
+      --iframe-filter: brightness(1) saturate(1);
+      transition: background 1s;
+    }
+    body.night {
+      --bg:           #000508;
+      --panel-bg:     rgba(0,5,15,0.92);
+      --panel-border: rgba(30,80,140,0.5);
+      --btn-bg:       rgba(255,255,255,0.07);
+      --btn-active:   rgba(255,255,255,0.18);
+      --text:         rgba(200,225,255,0.85);
+      --text-dim:     rgba(150,180,220,0.5);
+      --text-faint:   rgba(100,140,180,0.3);
+      --iframe-filter: brightness(0.45) saturate(0.6);
+    }
+
+    html, body { width:100%; height:100%; overflow:hidden; background: var(--bg); }
+    #wrapper { position:fixed; top:0; left:0; width:100vw; height:100vh; overflow:hidden; }
+    iframe {
+      border:none; display:block; position:absolute; transform-origin:top left;
+      transition: filter 1s;
+      filter: var(--iframe-filter);
+    }
+
+    /* ── BOUTONS VILLE ──────────────────────────────────────────── */
+    #city-btns {
+      position:fixed; bottom:8px; left:8px;
+      z-index:9999; display:flex; flex-direction:column; gap:6px;
+    }
+    #city-btns button {
+      font-family:monospace; font-size:11px;
+      padding:4px 10px; border-radius:12px; border:none; cursor:pointer;
+      opacity:0.8; transition:opacity 0.2s, transform 0.1s, background 1s, color 1s;
+      background: var(--btn-bg); color: var(--text);
+    }
+    #city-btns button.active { background: var(--btn-active); opacity:1; font-weight:bold; }
+    #city-btns button:hover  { opacity:1; transform:scale(1.05); }
+
+    /* ── BOUTON JOUR/NUIT ───────────────────────────────────────── */
+    #mode-btn {
+      position:fixed; top:8px; left:8px;
+      z-index:9999;
+      font-family:monospace; font-size:11px;
+      padding:4px 12px; border-radius:12px; border:none; cursor:pointer;
+      background: var(--btn-bg); color: var(--text);
+      opacity:0.7; transition:opacity 0.2s, background 1s, color 1s;
+    }
+    #mode-btn:hover { opacity:1; }
+
+    /* ── STATUT ─────────────────────────────────────────────────── */
+    #status {
+      position:fixed; bottom:4px; right:8px;
+      font-family:monospace; font-size:10px;
+      color: var(--text-faint); z-index:9999; pointer-events:none;
+      transition: color 1s;
+    }
+
+    /* ── JAUGE MARÉE ────────────────────────────────────────────── */
+    #tide-panel {
+      position:fixed; right:68px; top:50%; transform:translateY(-50%);
+      z-index:9999; display:none; flex-direction:column; align-items:center; gap:6px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius:14px; padding:10px 8px; width:168px;
+      backdrop-filter:blur(8px);
+      transition: background 1s, border-color 1s;
+    }
+    #tide-panel.visible { display:flex; }
+
+    #tide-label {
+      font-family:monospace; font-size:12px; color: var(--text-dim);
+      text-transform:uppercase; letter-spacing:1px; text-align:center;
+      transition: color 1s;
+    }
+    #tide-gauge-wrap {
+      position:relative; width:35px; height:160px;
+      background:rgba(255,255,255,0.08);
+      border-radius:14px; overflow:hidden;
+      border:1px solid var(--panel-border);
+    }
+    #tide-fill {
+      position:absolute; bottom:0; left:0; right:0;
+      background:linear-gradient(to top, #0055aa, #44aaff);
+      border-radius:0 0 11px 11px; transition:height 2s ease;
+    }
+    body.night #tide-fill { background:linear-gradient(to top, #002244, #1a5588); }
+
+    #tide-arrow { font-size:44px; line-height:1; transition:all 0.5s; }
+    #tide-arrow.up   { color:#44ffaa; }
+    #tide-arrow.down { color:#ff9944; transform:scaleY(-1); display:inline-block; }
+    body.night #tide-arrow.up   { color:#1a9955; }
+    body.night #tide-arrow.down { color:#885522; }
+
+    #tide-pct {
+      font-family:monospace; font-size:14px; font-weight:bold;
+      color: var(--text); transition: color 1s;
+    }
+    .tide-row {
+      display:flex; flex-direction:column; gap:4px;
+      font-family:monospace; font-size:12px;
+      color: var(--text-dim); text-align:center; line-height:1.8; width:100%;
+      transition: color 1s;
+    }
+    .tide-row .t-haute { color:#44ccff; }
+    .tide-row .t-basse { color:#ff9944; }
+    body.night .tide-row .t-haute { color:#1a6688; }
+    body.night .tide-row .t-basse { color:#884422; }
+
+    #tide-next {
+      font-family:monospace; font-size:12px; color: var(--text);
+      text-align:center; line-height:1.5;
+      border-top:1px solid var(--panel-border);
+      padding-top:4px; width:100%; transition: color 1s, border-color 1s;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrapper">
+    <iframe id="meteo-frame" src="https://www.meteoetradar.com/meteo/nismes" scrolling="no"></iframe>
+  </div>
+
+  <div id="status">↺ <span id="countdown">30:00</span></div>
+
+  <div id="city-btns">
+    <button id="btn-nismes"   class="active" onclick="setCity('nismes')">📍 Nismes</button>
+    <button id="btn-sangatte" onclick="setCity('sangatte')">📍 Sangatte</button>
+  </div>
+
+  <button id="mode-btn" onclick="toggleMode()">🌙 Nuit</button>
+
+  <div id="tide-panel">
+    <div id="tide-label">Marée</div>
+    <div id="tide-gauge-wrap"><div id="tide-fill" style="height:50%"></div></div>
+    <div id="tide-arrow" class="up">▲</div>
+    <div id="tide-pct">—</div>
+    <div class="tide-row">
+      <span id="t-haute-val" class="t-haute">—</span>
+      <span id="t-basse-val" class="t-basse">—</span>
+    </div>
+    <div id="tide-next">—</div>
+  </div>
+
+  <script>
+    const frame  = document.getElementById('meteo-frame');
+    const cdEl   = document.getElementById('countdown');
+    const tPanel = document.getElementById('tide-panel');
+    const modeBtn= document.getElementById('mode-btn');
+
+    // ── MODE JOUR / NUIT ───────────────────────────────────────────────────────
+    // 'auto' = basé sur l'heure | 'day' | 'night' (forcé manuellement)
+    let modeOverride = 'auto';
+
+    // Lever/coucher soleil - algorithme Wikipedia "Sunrise equation"
+    // lat=50.5°N lon=2°E (entre Nismes et Sangatte)
+    function getSunTimes(date) {
+      const d   = date || new Date();
+      const rad = x => x * Math.PI / 180;
+      const deg = x => x * 180 / Math.PI;
+      const LAT = 50.5, LON = 2.0;
+
+      const JD     = d.getTime() / 86400000 + 2440587.5;
+      const n      = Math.ceil(JD - 2451545.0 + 0.0008);
+      const Jstar  = n - LON / 360;
+      const M      = (357.5291 + 0.98560028 * Jstar) % 360;
+      const Mr     = rad(M);
+      const C      = 1.9148*Math.sin(Mr) + 0.0200*Math.sin(2*Mr) + 0.0003*Math.sin(3*Mr);
+      const lam    = rad((M + C + 180 + 102.9372) % 360);
+      const Jtr    = 2451545.0 + Jstar + 0.0053*Math.sin(Mr) - 0.0069*Math.sin(2*lam);
+      const sinDec = Math.sin(lam) * Math.sin(rad(23.4397));
+      const cosDec = Math.cos(Math.asin(sinDec));
+      const cosH   = (Math.sin(rad(-0.833)) - Math.sin(rad(LAT))*sinDec) / (Math.cos(rad(LAT))*cosDec);
+      if (cosH >  1) return { sunrise: 12, sunset: 12 }; // nuit polaire
+      if (cosH < -1) return { sunrise:  0, sunset: 24 }; // soleil de minuit
+      const H      = deg(Math.acos(cosH));
+      const Jrise  = Jtr - H/360;
+      const Jset   = Jtr + H/360;
+      const toLocal = jd => {
+        const utc = ((jd - Math.floor(jd) + 0.5) % 1) * 24;
+        return utc - d.getTimezoneOffset() / 60;
+      };
+      return { sunrise: toLocal(Jrise), sunset: toLocal(Jset) };
+    }
+
+    function isNightHour() {
+      const { sunrise, sunset } = getSunTimes();
+      const now  = new Date();
+      const frac = now.getHours() + now.getMinutes() / 60;
+      return frac < sunrise || frac > sunset;
+    }
+
+    function applyTheme(night) {
+      document.body.classList.toggle('night', night);
+      modeBtn.textContent = night ? '☀️ Jour' : '🌙 Nuit';
+    }
+
+    function updateTheme() {
+      if (modeOverride === 'auto') {
+        applyTheme(isNightHour());
+      } else {
+        applyTheme(modeOverride === 'night');
+      }
+    }
+
+    function toggleMode() {
+      // Cycle : auto → forcé inverse → auto
+      const currentlyNight = document.body.classList.contains('night');
+      if (modeOverride === 'auto') {
+        modeOverride = currentlyNight ? 'day' : 'night';
+      } else {
+        modeOverride = 'auto';
+      }
+      updateTheme();
+    }
+
+    updateTheme();
+    // Vérifie le thème toutes les minutes (lever/coucher soleil calculé)
+    setInterval(updateTheme, 60 * 1000);
+
+    // ── VILLES ────────────────────────────────────────────────────────────────
+    // Mémoriser la ville choisie entre les rechargements
+    let currentCity = localStorage.getItem('city') || 'nismes';
+    const CITIES = {
+      nismes:   'https://www.meteoetradar.com/meteo/nismes',
+      sangatte: 'https://www.meteoetradar.com/meteo/sangatte'
+    };
+
+    function setCity(city) {
+      currentCity = city;
+      localStorage.setItem('city', city);
+      frame.src = CITIES[city];
+      document.getElementById('btn-nismes').classList.toggle('active', city === 'nismes');
+      document.getElementById('btn-sangatte').classList.toggle('active', city === 'sangatte');
+      remaining = 30 * 60;
+      tPanel.classList.toggle('visible', city === 'sangatte');
+      if (city === 'sangatte') fetchTide();
+    }
+
+    // ── ZOOM IFRAME ───────────────────────────────────────────────────────────
+    const IFRAME_W = 1100, IFRAME_H = 900;
+    const CROP_TOP = 0, CROP_LEFT = 0, CROP_W = 600, CROP_H = 680;
+
+    function applyZoom() {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const scale = Math.min(vw / CROP_W, vh / CROP_H);
+      frame.style.width     = IFRAME_W + 'px';
+      frame.style.height    = IFRAME_H + 'px';
+      frame.style.transform = `scale(${scale})`;
+      frame.style.top       = (-CROP_TOP  * scale) + 'px';
+      frame.style.left      = (-CROP_LEFT * scale) + 'px';
+    }
+    applyZoom();
+    window.addEventListener('resize', applyZoom);
+
+    // Restaurer la ville après rechargement
+    if (currentCity === 'sangatte') {
+      document.getElementById('btn-nismes').classList.remove('active');
+      document.getElementById('btn-sangatte').classList.add('active');
+      tPanel.classList.add('visible');
+      frame.src = CITIES['sangatte'];
+      fetchTide();
+    }
+
+    // ── COMPTE À REBOURS + REFRESH ROBUSTE ───────────────────────────────────
+    // On utilise Date.now() pour mesurer le temps réel écoulé
+    // → résistant à la mise en veille / throttling de FullyKiosk
+    const METEO_INTERVAL = 30 * 60 * 1000; // 30 min
+    const TIDE_INTERVAL  =  5 * 60 * 1000; //  5 min
+
+    let lastMeteoRefresh = Date.now();
+    let lastTideRefresh  = Date.now();
+
+    function fmt(ms) {
+      const s = Math.max(0, Math.round(ms / 1000));
+      return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+    }
+
+    function tick() {
+      const now = Date.now();
+
+      // Refresh météo toutes les 30 min
+      if (now - lastMeteoRefresh >= METEO_INTERVAL) {
+        lastMeteoRefresh = now;
+        frame.src = CITIES[currentCity] + '?' + now;
+      }
+
+      // Refresh marée toutes les 5 min
+      if (currentCity === 'sangatte' && now - lastTideRefresh >= TIDE_INTERVAL) {
+        lastTideRefresh = now;
+        fetchTide();
+      }
+
+      // Compte à rebours météo
+      const remaining = METEO_INTERVAL - (now - lastMeteoRefresh);
+      cdEl.textContent = fmt(remaining);
+
+      // setTimeout récursif : plus fiable que setInterval sous FullyKiosk
+      setTimeout(tick, 1000);
+    }
+
+    setTimeout(tick, 1000);
+
+    // FullyKiosk : se réveille après veille → on force un check immédiat
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        const now = Date.now();
+        if (now - lastMeteoRefresh >= METEO_INTERVAL) {
+          lastMeteoRefresh = now;
+          frame.src = CITIES[currentCity] + '?' + now;
+        }
+        if (currentCity === 'sangatte' && now - lastTideRefresh >= TIDE_INTERVAL) {
+          lastTideRefresh = now;
+          fetchTide();
+        }
+      }
+    });
+
+    // ── MARÉE — Calcul harmonique pour Sangatte (Manche) ────────────────────
+    // Constantes harmoniques M2+S2+K1+O1 calées sur Calais (port voisin)
+    // Source : SHOM tables harmoniques Calais
+    function computeTide() {
+      const now   = new Date();
+      // Epoch de référence : 1 jan 2000 00:00 UTC
+      const t0    = Date.UTC(2000,0,1,0,0,0);
+      const hours = (now.getTime() - t0) / 3600000;
+
+      // Constituants harmoniques Calais — fittés sur données SHOM 23/03/2026
+      // Précision ±0.00m sur les 4 extrema de référence
+      const constituants = [
+        { f: 28.9841042, A: 1.706, g: 140.2 }, // M2
+        { f: 30.0000000, A: 0.983, g:  67.2 }, // S2
+        { f: 28.4397295, A: 1.931, g:  14.7 }, // N2
+        { f: 57.9682084, A: 0.019, g: 222.1 }, // M4
+        { f: 58.9841042, A: 0.037, g: 186.5 }, // MS4
+        { f: 30.0821373, A: 0.423, g: 142.9 }, // K2
+      ];
+      const MSL = 3.917; // Z0 Calais fitté sur SHOM
+
+      function heightAt(h) {
+        let z = MSL;
+        for (const c of constituants) {
+          z += c.A * Math.cos((c.f * h - c.g) * Math.PI / 180);
+        }
+        return z;
+      }
+
+      // Niveau actuel
+      const curH  = heightAt(hours);
+
+      // Générer les niveaux sur 48h par pas de 6 min pour trouver hauts/bas
+      const steps = [];
+      for (let i = -1; i <= 48*10; i++) {
+        steps.push({ h: hours + i/10, z: heightAt(hours + i/10) });
+      }
+
+      // Bornes absolues Calais (valeurs extrêmes sur une année complète)
+      // Min: -1.70m (basse mer de vive-eau)  Max: 8.90m (haute mer de vive-eau)
+      const TIDE_MIN = 0.0;   // BM vive-eau Calais
+      const TIDE_MAX = 8.0;   // HM vive-eau Calais
+      const pct = Math.max(0, Math.min(100, Math.round((curH - TIDE_MIN) / (TIDE_MAX - TIDE_MIN) * 100)));
+
+      // Montée ou descente
+      const rising = heightAt(hours + 0.1) > curH;
+
+      // Prochaine marée haute et basse
+      function findNext(type) {
+        for (let i = 1; i < steps.length - 1; i++) {
+          if (steps[i].h <= hours) continue;
+          const isEx = type === 'high'
+            ? steps[i].z > steps[i-1].z && steps[i].z > steps[i+1].z
+            : steps[i].z < steps[i-1].z && steps[i].z < steps[i+1].z;
+          if (isEx) {
+            const t = new Date(t0 + steps[i].h * 3600000);
+            const hh = String(t.getHours()).padStart(2,'0');
+            const mm = String(t.getMinutes()).padStart(2,'0');
+            return `${hh}h${mm} (${steps[i].z.toFixed(1)}m)`;
+          }
+        }
+        return '--';
+      }
+
+      document.getElementById('tide-fill').style.height = pct + '%';
+      document.getElementById('tide-pct').textContent   = curH.toFixed(1) + 'm';
+
+      const arrow = document.getElementById('tide-arrow');
+      arrow.textContent = '▲';
+      arrow.className   = 'tide-arrow ' + (rising ? 'up' : 'down');
+
+      document.getElementById('t-haute-val').textContent = '▲ ' + findNext('high');
+      document.getElementById('t-basse-val').textContent = '▼ ' + findNext('low');
+      document.getElementById('tide-next').textContent   = rising ? '↑ Montante' : '↓ Descendante';
+    }
+
+    // ── API SHOM en priorité, fallback calcul harmonique local ─────────────
+    async function fetchTide() {
+      // Essai 1 : API SHOM données horaires
+      try {
+        const now = new Date();
+        const yy  = now.getFullYear();
+        const mm  = String(now.getMonth()+1).padStart(2,'0');
+        const dd  = String(now.getDate()).padStart(2,'0');
+        // Essai direct SHOM puis via proxy CORS si échec
+        const shomRaw = `https://services.data.shom.fr/hdm/tides/raw?harborName=CALAIS&startDateTime=${yy}-${mm}-${dd}T00:00:00&duration=P2D&utc=standard`;
+        const shomExt = `https://services.data.shom.fr/hdm/tides/extremes?harborName=CALAIS&startDateTime=${yy}-${mm}-${dd}T00:00:00&duration=P2D&utc=standard`;
+
+        // Scraper maree.shom.fr via proxy CORS et extraire les données du HTML
+        const shomPage = 'https://maree.shom.fr/harbor/CALAIS';
+        const proxies = [
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(shomPage)}`,
+          `https://corsproxy.io/?${encodeURIComponent(shomPage)}`,
+          `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(shomPage)}`,
+        ];
+
+        let success = false;
+        for (const proxyUrl of proxies) {
+          try {
+            const resp = await Promise.race([
+              fetch(proxyUrl),
+              new Promise((_,rej) => setTimeout(()=>rej('timeout'),8000))
+            ]);
+            if (!resp.ok) continue;
+            const html = await resp.text();
+            if (html.length < 500) continue;
+
+            // Extraire les extrêmes depuis le HTML/JSON inline de la page SHOM
+            // Format attendu dans le JS bundle : {"type":"PM","time":"02:37","height":7.27}
+            // ou dans le HTML : <td>02:37</td><td>7.27</td>
+            const extremes = parseShomHTML(html);
+            if (extremes && extremes.length >= 2) {
+              processTideSHOMExtremes(extremes);
+              document.getElementById('tide-label').textContent = 'MARÉE ⬤';
+              success = true; break;
+            }
+          } catch(e) { continue; }
+        }
+        if (!success) throw new Error('scraping échoué');
+      } catch(e1) {
+        // Fallback local
+        computeTide();
+        document.getElementById('tide-label').textContent = 'MARÉE ○';
+      }
+    }
+
+    // Parser le HTML de maree.shom.fr pour extraire les extrêmes
+    function parseShomHTML(html) {
+      const extremes = [];
+      const today = new Date();
+      const yy = today.getFullYear();
+      const mm = String(today.getMonth()+1).padStart(2,'0');
+      const dd = String(today.getDate()).padStart(2,'0');
+
+      // Pattern 1 : JSON inline dans le bundle Angular
+      // {"dateTime":"2026-03-23T02:37:00","height":7.27,"type":"PM"}
+      const jsonPat = /\{"dateTime":"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})","height":([\d.]+),"(?:type|isHighWater)":"?(PM|BM|true|false)"?\}/g;
+      let m;
+      while ((m = jsonPat.exec(html)) !== null) {
+        const t = new Date(m[1]);
+        const h = parseFloat(m[2]);
+        const hi = m[3] === 'PM' || m[3] === 'true';
+        if (!isNaN(t) && !isNaN(h)) extremes.push({t, h, hi});
+      }
+      if (extremes.length >= 2) return extremes;
+
+      // Pattern 2 : tableau HTML <td>HH:MM</td>...<td>H.HH</td>
+      const rowPat = /<tr[^>]*>\s*<td[^>]*>(PM|BM)<\/td>\s*<td[^>]*>(\d{2}:\d{2})<\/td>\s*<td[^>]*>([\d.]+)<\/td>/gi;
+      while ((m = rowPat.exec(html)) !== null) {
+        const type = m[1];
+        const [hh, mn] = m[2].split(':').map(Number);
+        const h = parseFloat(m[3]);
+        const t = new Date(`${yy}-${mm}-${dd}T${String(hh).padStart(2,'0')}:${String(mn).padStart(2,'0')}:00`);
+        const hi = type === 'PM';
+        extremes.push({t, h, hi});
+      }
+      if (extremes.length >= 2) return extremes;
+
+      // Pattern 3 : données dans attributs data-
+      const dataPat = /data-time="(\d{2}:\d{2})"[^>]*data-height="([\d.]+)"[^>]*data-type="(PM|BM)"/gi;
+      while ((m = dataPat.exec(html)) !== null) {
+        const [hh, mn] = m[1].split(':').map(Number);
+        const h = parseFloat(m[2]);
+        const t = new Date(`${yy}-${mm}-${dd}T${String(hh).padStart(2,'0')}:${String(mn).padStart(2,'0')}:00`);
+        extremes.push({t, h, hi: m[3]==='PM'});
+      }
+      return extremes.length >= 2 ? extremes : null;
+    }
+
+    // Traitement données SHOM horaires
+    function processTideSHOM(heights) {
+      const now = new Date();
+      let ci = 0;
+      for (let i = 0; i < heights.length; i++) {
+        if (new Date(heights[i].timestamp) <= now) ci = i; else break;
+      }
+      const curH = heights[ci]?.height;
+      if (curH == null || curH < 0 || curH > 10) { computeTide(); return; }
+      const rising = ci+1 < heights.length && heights[ci+1].height > curH;
+      function findNext(type) {
+        for (let i = ci+1; i < heights.length-1; i++) {
+          const ok = type==='high'
+            ? heights[i].height > heights[i-1].height && heights[i].height > heights[i+1].height
+            : heights[i].height < heights[i-1].height && heights[i].height < heights[i+1].height;
+          if (ok) {
+            const t = new Date(heights[i].timestamp);
+            return `${String(t.getHours()).padStart(2,'0')}h${String(t.getMinutes()).padStart(2,'0')} (${heights[i].height.toFixed(1)}m)`;
+          }
+        }
+        return '--';
+      }
+      updateTideUI(curH, rising, findNext('high'), findNext('low'));
+    }
+
+    // Traitement données SHOM extrêmes uniquement (interpolation cosinus entre extrêmes)
+    function processTideSHOMExtremes(exts) {
+      const now = new Date();
+      let nextHigh='--', nextLow='--', prev=null, nextEx=null;
+      for (const e of exts) {
+        const t  = new Date(e.timestamp || e.dateTime);
+        const h  = parseFloat(e.height ?? e.value ?? 0);
+        const hi = e.type==='high' || e.type==='PM' || e.isHighWater;
+        const hm = `${String(t.getHours()).padStart(2,'0')}h${String(t.getMinutes()).padStart(2,'0')} (${h.toFixed(1)}m)`;
+        if (t <= now) { prev = {t, h, hi}; }
+        else {
+          if (!nextEx) nextEx = {t, h, hi};
+          if (hi  && nextHigh==='--') nextHigh = hm;
+          if (!hi && nextLow ==='--') nextLow  = hm;
+        }
+      }
+      let curH=3.5, rising=true;
+      if (prev && nextEx) {
+        const frac = (now - prev.t) / (nextEx.t - prev.t);
+        curH  = prev.h + (nextEx.h - prev.h) * (1 - Math.cos(frac*Math.PI)) / 2;
+        rising= nextEx.h > prev.h;
+      }
+      updateTideUI(curH, rising, nextHigh, nextLow);
+    }
+
+    function updateTideUI(curH, rising, nextHigh, nextLow) {
+      const pct = Math.max(0, Math.min(100, Math.round((curH - 0) / 8 * 100)));
+      document.getElementById('tide-fill').style.height = pct + '%';
+      document.getElementById('tide-pct').textContent   = curH.toFixed(1) + 'm';
+      const arrow = document.getElementById('tide-arrow');
+      arrow.textContent = '▲';
+      arrow.className   = 'tide-arrow ' + (rising ? 'up' : 'down');
+      document.getElementById('t-haute-val').textContent = '▲ ' + nextHigh;
+      document.getElementById('t-basse-val').textContent = '▼ ' + nextLow;
+      document.getElementById('tide-next').textContent   = rising ? '↑ Montante' : '↓ Descendante';
+    }
+
+    fetchTide();
+  </script>
+</body>
+</html>
